@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dynamic Crime Analysis Dashboard</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18.2.0/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
+    
+    <!-- Babel for compiling JSX in the browser -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- PropTypes (Required by Recharts) -->
+    <script src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js"></script>
+    
+    <!-- Recharts -->
+    <script src="https://unpkg.com/recharts@2.12.0/umd/Recharts.js"></script>
+
+    <!-- PDF.js for dynamic, native browser parsing of PDF contents -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    </script>
+
+    <style>
+        .fade-in { animation: fadeIn 0.5s ease-in-out; }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-900 font-sans">
+
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, Fragment } = React;
+        const { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ComposedChart, LabelList } = window.Recharts;
+
+        // Icons
+        const UploadCloud = ({size=24, className=""}) => (<svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m16 16-4-4-4 4"/></svg>);
+        const FileText = ({size=24, className=""}) => (<svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>);
+        const TrendingUp = ({size=24, className=""}) => (<svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>);
+        const TrendingDown = ({size=24, className=""}) => (<svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polyline points="22 17 13.5 8.5 8.5 13.5 2 7"/><polyline points="16 17 22 17 22 11"/></svg>);
+        const ShieldAlert = ({size=24, className=""}) => (<svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2-1 4-2 7-2 2.5 0 4.5 1 6.5 2a1 1 0 0 1 1 1v7z"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>);
+        const Activity = ({size=24, className=""}) => (<svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>);
+        const SearchIcon = ({size=24, className=""}) => (<svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>);
+        const AlertCircle = ({size=24, className=""}) => (<svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>);
+        const FileDigit = ({size=24, className=""}) => (<svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M4 22h14a2 2 0 0 0 2-2V7l-5-5H6a2 2 0 0 0-2 2v4"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><rect width="4" height="6" x="2" y="12" rx="2"/><path d="M10 12h2v6"/><path d="M10 18h4"/></svg>);
+        const Download = ({size=24, className=""}) => (<svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>);
+        const UploadFileIcon = ({size=24, className=""}) => (<svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>);
+
+        // Template Configuration (Used to build the dynamic structure before populating with extracted PDF data)
+        const initialDataTemplate = {
+          summaries: [
+            { id: 'total', title: "Grand Total Crimes", val25: 0, val26: 0, change: 0, wo25: 0, wo26: 0, ar25: 0, ar26: 0 },
+            { id: 'ipc', title: "IPC (Total)", val25: 0, val26: 0, change: 0, wo25: 0, wo26: 0, ar25: 0, ar26: 0 },
+            { id: 'lsl', title: "LSL (Total)", val25: 0, val26: 0, change: 0, wo25: 0, wo26: 0, ar25: 0, ar26: 0 },
+            { id: 'person', title: "Crime Against Person", val25: 0, val26: 0, change: 0, wo25: 0, wo26: 0, ar25: 0, ar26: 0 },
+            { id: 'property', title: "Crime Against Property", val25: 0, val26: 0, change: 0, wo25: 0, wo26: 0, ar25: 0, ar26: 0 },
+            { id: 'women', title: "Crime Against Women", val25: 0, val26: 0, change: 0, wo25: 0, wo26: 0, ar25: 0, ar26: 0 }
+          ],
+          categories: [
+            { name: 'Crime Against Person', '2025': 0, '2026': 0 },
+            { name: 'Crime Against Property', '2025': 0, '2026': 0 },
+            { name: 'Crime Against Women', '2025': 0, '2026': 0 },
+            { name: 'Miscellaneous IPC', '2025': 0, '2026': 0 },
+            { name: 'Local/Special Laws', '2025': 0, '2026': 0 }
+          ],
+          allCrimes: [
+            { head: "Murder", extendedHead: "Murder (103/104 BNS) (302 IPC)", category: "Crime Against Person", reg25: 0, reg26: 0, change: 0, wo25: 0, wo26: 0, ar25: 0, ar26: 0 },
+            { head: "Culpable Homicide", extendedHead: "Culpable Homicide not amounting to Murder (105 BNS) (304 IPC)", category: "Crime Against Person", reg25: 0, reg26: 0, change: 0, wo25: 0, wo26: 0, ar25: 0, ar26: 0 },
+            { head: "Attempt to Murder", extendedHead: "Attempt to Commit Murder (109 BNS) (307 IPC)", category: "Crime Against Person", reg25: 0, reg26: 0, change: 0, wo25: 0, wo26: 0, ar25: 0, ar26: 0 },
+            { head: "Attempt to Commit Culpable Homicide", extendedHead: "Attempt to Commit Culpable Homicide (110 BNS) (308 IPC)", category: "Crime Against Person", reg25: 0, reg26: 0, change: 0, wo25: 0, wo26: 0, ar25: 0, ar26: 0 },
+            { head: "Abetment of Suicide", extendedHead: "Abetment of Suicide (107/108 BNS) (305/306 IPC)", category: "Crime Against Person", reg25: 0, reg26: 0, change: 0, wo25: 0, wo26: 0, ar25: 0, ar26: 0 },
+            { head: "Simple Hurt", extendedHead: "Simple Hurt (115-125 BNS) (323-337 IPC)", category: "Crime Against Person", reg25: 0, reg26: 0, change: 0, wo25: 0, wo26: 0, ar25: 0, ar26: 0 },
+            { head: "Grievous Hurt", extendedHead: "Grievous Hurt (117-125 BNS) (325-338 IPC)", category: "Crime Against Person", reg25: 0, reg26: 0, change: 0, wo25: 0, wo26: 0, ar25: 0, ar26: 0 },
+            { head: "Missing Persons", extendedHead: "Missing Persons (127(6) BNS) (346 IPC)", category: "Crime Against Person", reg25: 0, reg26: 0, change: 0, wo25: 0, wo26: 0, ar25: 0, ar26: 0 },
+            { head: "Kidnapping & Abduction", extendedHead: "Kidnapping & Abduction (137/139/140/142/97 BNS) (363-365, 367-369 IPC)", category: "Crime Against Person", reg25: 0, reg26: 0, change: 0, wo25: 0, wo26: 0, ar25: 0, ar26: 0 },
+            { head: "Kidnapping", extendedHead: "Kidnapping & Abduction (87/96/141 BNS) (366-366B IPC)", category: "Crime Against Women", reg25: 0, reg26: 0, change: 0, wo25: 0, wo26: 0, ar25: 0, ar26: 0 },
+            { head: "Rape", extendedHead: "Rape (64-66,70/71 BNS) (376-376A/AB/D-E IPC)", category: "Crime Against Women", reg25: 0, reg26: 0, change: 0, wo25: 0, wo26: 0, ar25: 0, ar26: 0 },
+            { head: "Attempt to Rape", extendedHead: "Attempt to Rape", category: "Crime Against Women", reg25: 0, reg26: 0, change: 0, wo25: 0, wo26: 0, ar25: 0, ar26: 0 },
+            { head: "Sexual Intercourse", extendedHead: "Sexual Intercourse other than Rape (67-69 BNS) (376 B/C IPC)", category: "Crime Against Women", reg25: 0, reg26: 0, change: 0, wo25: 0, wo26: 0, ar25: 0, ar26: 0 },
+            { head: "Dowry Deaths", extendedHead: "Dowry Deaths (80 BNS) (304B IPC)", category: "Crime Against Women", reg25: 0, reg26: 0, change: 0, wo25: 0, wo26: 0, ar25: 0, ar26: 0 },
+            { head: "Molestation", extendedHead: "Molestation/Sexual Harrasment (74-78 BNS) (354-354D IPC)", category: "Crime Against Women", reg25: 0, reg26: 0, change: 0, wo25: 0, wo26: 0, ar25: 0, ar26: 0 },
+            { head: "Cruelty by Husband", extendedHead: "Cruelty by Husband or his Relatives (85 BNS) (498A IPC)", category: "Crime Against Women", reg25: 0, reg26: 0, change: 0, wo25: 0, wo26: 0, ar25: 0, ar26: 0 },
+            { head: "Other Simple Theft", extendedHead: "Other Simple Theft (303/305-307 BNS) (379-382 IPC)", category: "Crime Against Property", reg25: 0, reg26: 0, change: 0, wo25: 0, wo26: 0, ar25: 0, ar26: 0 },
+            { head: "Theft", extendedHead: "Theft (MV)", category: "Crime Against Property", reg25: 0, reg26: 0, change: 0, wo25: 0, wo26: 0, ar25: 0, ar26: 0 },
+            { head: "Animal", extendedHead: "Theft (Animal)", category: "Crime Against Property", reg25: 0, reg26: 0, change: 0, wo25: 0, wo26: 0, ar25: 0, ar26: 0 },
+            { head: "Snatching", extendedHead: "Snatching (304/134 BNS) (379A/356 IPC)", category: "Crime Against Property", reg25: 0, reg26: 0, change: 0, wo25: 0, wo26: 0, ar25: 0, ar26: 0 },
+            { head: "Burglary", extendedHead: "Burglary (305 r/w 331(2)-(8) BNS) (380 r/w 454-460 IPC)", category: "Crime Against Property", reg25: 0, reg26: 0, change: 0, wo25: 0, wo26: 0, ar25: 0, ar26: 0 },
+            { head: "Robbery", extendedHead: "Robbery (309(4)/309(6)/311 BNS) (3798/392/394/397 IPC)", category: "Crime Against Property", reg25: 0, reg26: 0, change: 0, wo25: 0, wo26: 0, ar25: 0, ar26: 0 },
+            { head: "Dacoity", extendedHead: "Dacoity (310(2)/310(3)/311 BNS) (395/396/397 IPC)", category: "Crime Against Property", reg25: 0, reg26: 0, change: 0, wo25: 0, wo26: 0, ar25: 0, ar26: 0 },
+            { head: "Extortion", extendedHead: "Extortion & Blackmail (308 BNS) (384-389 IPC)", category: "Crime Against Property", reg25: 0, reg26: 0, change: 0, wo25: 0, wo26: 0, ar25: 0, ar26: 0 },
+            { head: "Cheating", extendedHead: "Cheating (318(4) BNS) (420 IPC)", category: "Miscellaneous IPC", reg25: 0, reg26: 0, change: 0, wo25: 0, wo26: 0, ar25: 0, ar26: 0 },
+            { head: "Fraud & Forgery", extendedHead: "Fraud & Forgery", category: "Miscellaneous IPC", reg25: 0, reg26: 0, change: 0, wo25: 0, wo26: 0, ar25: 0, ar26: 0 },
+            { head: "Criminal Breach of Trust", extendedHead: "Criminal Breach of Trust (316 BNS) (406-409 IPC)", category: "Miscellaneous IPC", reg25: 0, reg26: 0, change: 0, wo25: 0, wo26: 0, ar25: 0, ar26: 0 },
+            { head: "Fatal Road Accident", extendedHead: "Fatal Road Accident (106 r/w 281/285 BNS) (304A r/w 279/283 IPC)", category: "Miscellaneous IPC", reg25: 0, reg26: 0, change: 0, wo25: 0, wo26: 0, ar25: 0, ar26: 0 },
+            { head: "Non-Fatal Rash Driving", extendedHead: "Non-Fatal Rash Driving (281/281 r/w 125 BNS) (279/279 r/w 336/337/338/Other IPC)", category: "Miscellaneous IPC", reg25: 0, reg26: 0, change: 0, wo25: 0, wo26: 0, ar25: 0, ar26: 0 },
+            { head: "Riots", extendedHead: "Riots (189(5)-(6)/190/191 BNS) (147-151 IPC)", category: "Miscellaneous IPC", reg25: 0, reg26: 0, change: 0, wo25: 0, wo26: 0, ar25: 0, ar26: 0 },
+            { head: "Criminal Trespass", extendedHead: "Criminal Trespass (329/332/333 BNS) (447-452 IPC)", category: "Miscellaneous IPC", reg25: 0, reg26: 0, change: 0, wo25: 0, wo26: 0, ar25: 0, ar26: 0 },
+            { head: "Criminal Intimidation", extendedHead: "Criminal Intimidation (351 r/w BNS Crimes) (506 r/w IPC crimes)", category: "Miscellaneous IPC", reg25: 0, reg26: 0, change: 0, wo25: 0, wo26: 0, ar25: 0, ar26: 0 },
+            { head: "Non-appearance in court", extendedHead: "Non-appearance in court (209 BNS) (174A IPC)", category: "Miscellaneous IPC", reg25: 0, reg26: 0, change: 0, wo25: 0, wo26: 0, ar25: 0, ar26: 0 },
+            { head: "POCSO Act (Sec. 4/6)", extendedHead: "POCSO Act (Sec. 4/6)", category: "Local and Special Laws", reg25: 0, reg26: 0, change: 0, wo25: 0, wo26: 0, ar25: 0, ar26: 0 },
+            { head: "POCSO Act (Excl", extendedHead: "POCSO Act (Excl sec 4/6)", category: "Local and Special Laws", reg25: 0, reg26: 0, change: 0, wo25: 0, wo26: 0, ar25: 0, ar26: 0 },
+            { head: "SC/ST", extendedHead: "SC/ST (POA) Act", category: "Local and Special Laws", reg25: 0, reg26: 0, change: 0, wo25: 0, wo26: 0, ar25: 0, ar26: 0 },
+            { head: "Arms Act", extendedHead: "Arms Act, 1959", category: "Local and Special Laws", reg25: 0, reg26: 0, change: 0, wo25: 0, wo26: 0, ar25: 0, ar26: 0 },
+            { head: "NDPS Act", extendedHead: "NDPS Act, 1985", category: "Local and Special Laws", reg25: 0, reg26: 0, change: 0, wo25: 0, wo26: 0, ar25: 0, ar26: 0 },
+            { head: "Excise Act", extendedHead: "Excise Act, 1914", category: "Local and Special Laws", reg25: 0, reg26: 0, change: 0, wo25: 0, wo26: 0, ar25: 0, ar26: 0 },
+            { head: "Public Gambling Act", extendedHead: "Public Gambling Act", category: "Local and Special Laws", reg25: 0, reg26: 0, change: 0, wo25: 0, wo26: 0, ar25: 0, ar26: 0 },
+            { head: "Electricity Act", extendedHead: "Electricity Act, 2003", category: "Local and Special Laws", reg25: 0, reg26: 0, change: 0, wo25: 0, wo26: 0, ar25: 0, ar26: 0 },
+            { head: "Information Technology", extendedHead: "Information Technology Act, 2000", category: "Local and Special Laws", reg25: 0, reg26: 0, change: 0, wo25: 0, wo26: 0, ar25: 0, ar26: 0 },
+            { head: "HSGS Act", extendedHead: "HSGS Act, 2015", category: "Local and Special Laws", reg25: 0, reg26: 0, change: 0, wo25: 0, wo26: 0, ar25: 0, ar26: 0 },
+            { head: "MMDR Act", extendedHead: "MMDR Act, 1957", category: "Local and Special Laws", reg25: 0, reg26: 0, change: 0, wo25: 0, wo26: 0, ar25: 0, ar26: 0 }
+          ]
+        };
+
+        const categoriesList = Array.from(new Set(initialDataTemplate.allCrimes.map(item => item.category)));
+
+        // --- Custom Label Components ---
+        const CustomBarLabel2025 = (props) => {
+          const { x, y, width, value } = props;
+          return <text x={x + width / 2} y={y - 8} fill="#64748b" textAnchor="middle" fontSize="11" fontWeight="600">{value}</text>;
+        };
+
+        const CustomBarLabel2026 = ({ x, y, width, value, index, chartData }) => {
+          const category = chartData[index];
+          const diff = category['2026'] - category['2025'];
+          const isPositive = diff > 0;
+          const isZero = diff === 0;
+          const color = isPositive ? '#ef4444' : isZero ? '#94a3b8' : '#22c55e';
+          const sign = isPositive ? '+' : '';
+          
+          return (
+            <g>
+              <text x={x + width / 2} y={y - 24} fill={color} textAnchor="middle" fontSize="12" fontWeight="800">{sign}{diff}</text>
+              <text x={x + width / 2} y={y - 8} fill="#1e40af" textAnchor="middle" fontSize="11" fontWeight="700">{value}</text>
+            </g>
+          );
+        };
+
+        const CustomYAxisTick = ({ x, y, payload, fullData }) => {
+          const crime = fullData.find(c => c.head === payload.value);
+          if (!crime) return null;
+          
+          const isPositive = crime.change > 0;
+          const isNegative = crime.change < 0;
+          const color = isPositive ? '#ef4444' : isNegative ? '#22c55e' : '#94a3b8'; 
+          const sign = isPositive ? '+' : '';
+          const changeText = `[${sign}${crime.change}%]`;
+
+          return (
+            <g transform={`translate(${x},${y})`}>
+              <text x={0} y={0} dy={4} textAnchor="end" fontSize="11" fontWeight="600">
+                <tspan fill={color} fontWeight="800">{changeText}</tspan>
+                <tspan fill="#334155"> {crime.extendedHead || crime.head}</tspan>
+              </text>
+            </g>
+          );
+        };
+
+        const CustomTooltip = ({ active, payload, label }) => {
+          if (active && payload && payload.length) {
+            return (
+              <div className="bg-white p-4 border border-slate-200 rounded-lg shadow-xl z-[100]">
+                <p className="font-semibold text-slate-800 mb-2 border-b pb-2">{label}</p>
+                {payload.map((entry, index) => (
+                  <p key={index} className="text-sm py-1 flex justify-between gap-4" style={{ color: entry.color }}>
+                    <span>{entry.name}:</span> <span className="font-bold">{entry.value}</span>
+                  </p>
+                ))}
+              </div>
+            );
+          }
+          return null;
+        };
+
+        const DivergingBar = ({ value }) => {
+          const isPositive = value > 0;
+          const isZero = value === 0;
+          const barWidth = Math.min(Math.abs(value), 150) / 3; 
+
+          return (
+            <div className="flex items-center justify-end gap-3 w-full">
+              <span className={`text-xs font-bold w-12 text-right ${isZero ? 'text-slate-400' : isPositive ? 'text-red-600' : 'text-green-600'}`}>
+                {isPositive ? '+' : ''}{value}%
+              </span>
+              <div className="w-24 h-2 bg-slate-100 rounded-full overflow-hidden relative flex print:bg-slate-200">
+                <div className="absolute left-1/2 top-0 bottom-0 w-[2px] bg-slate-300 z-10 print:bg-slate-400"></div>
+                {!isZero && (isPositive ? (
+                  <div className="absolute left-1/2 h-full bg-red-500 rounded-r-full transition-all print:bg-red-600" style={{ width: `${barWidth}%` }}></div>
+                ) : (
+                  <div className="absolute right-1/2 h-full bg-green-500 rounded-l-full transition-all print:bg-green-600" style={{ width: `${barWidth}%` }}></div>
+                ))}
+              </div>
+            </div>
+          );
+        };
+
+        // Main Application
+        const App = () => {
+          const [viewState, setViewState] = useState('upload'); 
+          const [activeTab, setActiveTab] = useState('overview');
+          const [searchTerm, setSearchTerm] = useState('');
+          const [isPrinting, setIsPrinting] = useState(false);
+
+          // State for dynamic content parsed from PDF
+          const [districtName, setDistrictName] = useState('DASHBOARD');
+          const [reportDateRange, setReportDateRange] = useState('Pending Data');
+          const [parsedData, setParsedData] = useState(initialDataTemplate);
+
+          const handleDragOver = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+          };
+
+          // --- CORE DYNAMIC ENGINE: NATIVE PDF PARSING ---
+          const processPDFFile = async (e) => {
+            e.preventDefault();
+            let file = null;
+            if (e.dataTransfer && e.dataTransfer.files) { file = e.dataTransfer.files[0]; } 
+            else if (e.target && e.target.files) { file = e.target.files[0]; }
+            
+            if (!file) return;
+            setViewState('processing');
+
+            try {
+              // 1. Extract raw text from the file utilizing pdf.js
+              const arrayBuffer = await file.arrayBuffer();
+              const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+              const textItemsArray = [];
+              
+              for(let i = 1; i <= pdf.numPages; i++) {
+                 const page = await pdf.getPage(i);
+                 const content = await page.getTextContent();
+                 // Capture all visible text segments
+                 textItemsArray.push(...content.items.map(item => item.str.trim()).filter(Boolean));
+              }
+
+              const fullStr = textItemsArray.join(' ');
+              const dynamicData = JSON.parse(JSON.stringify(initialDataTemplate));
+
+              // Helper function to extract a value block based on a specific label from the summary
+              const extractValuesByLabel = (label, text) => {
+                  const safeLabel = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                  const regex = new RegExp(`${safeLabel}([\\s\\S]{0,350})`, 'i');
+                  const match = text.match(regex);
+                  if (!match) return null;
+
+                  const chunk = match[1];
+                  const regMatch = chunk.match(/Registered[^\d-]*(-?\d+(?:\.\d+)?)[^\d-]+(-?\d+(?:\.\d+)?)/i);
+                  const woMatch = chunk.match(/Workout[^\d-]*(-?\d+(?:\.\d+)?)[^\d-]+(-?\d+(?:\.\d+)?)/i);
+                  const arMatch = chunk.match(/Arrest Rate[^\d-]*(-?\d+(?:\.\d+)?)[^\d-]+(-?\d+(?:\.\d+)?)/i);
+
+                  if (!regMatch) return null;
+
+                  return {
+                      reg25: regMatch ? parseFloat(regMatch[1]) : 0,
+                      reg26: regMatch ? parseFloat(regMatch[2]) : 0,
+                      wo25: woMatch ? parseFloat(woMatch[1]) : 0,
+                      wo26: woMatch ? parseFloat(woMatch[2]) : 0,
+                      ar25: arMatch ? parseFloat(arMatch[1]) : 0,
+                      ar26: arMatch ? parseFloat(arMatch[2]) : 0
+                  };
+              };
+
+              // 2. Parse Dynamic Headers
+              const distMatch = fullStr.match(/Snapshot\s*-\s*2\s*years\s*for\s*([a-zA-Z\s]+)\s*\(/i);
+              if (distMatch && distMatch[1]) setDistrictName(distMatch[1].trim());
+
+              const dateMatch = fullStr.match(/\(([0-9]{2}\.[0-9]{2}\.[0-9]{4}\s*-\s*[0-9]{2}\.[0-9]{2}\.[0-9]{4})\)/);
+              if (dateMatch && dateMatch[1]) setReportDateRange(dateMatch[1].trim());
+
+              // 3. Parse Exact Crime Figures dynamically
+              dynamicData.allCrimes.forEach(crime => {
+                  const safeHead = crime.head.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                  // Look for the specific crime identifier, isolate the immediate following text chunk
+                  const crimeRegex = new RegExp(`${safeHead}([\\s\\S]{0,250})`, 'i');
+                  const crimeMatch = fullStr.match(crimeRegex);
+
+                  if (crimeMatch) {
+                      const chunk = crimeMatch[1];
+
+                      // Scrape "Registered" row numbers
+                      const regMatch = chunk.match(/Registered[^\d-]*(-?\d+(?:\.\d+)?)[^\d-]+(-?\d+(?:\.\d+)?)/i);
+                      if (regMatch) {
+                          crime.reg25 = parseFloat(regMatch[1]);
+                          crime.reg26 = parseFloat(regMatch[2]);
+                          crime.change = crime.reg25 !== 0 ? parseFloat(((crime.reg26 - crime.reg25) / crime.reg25 * 100).toFixed(1)) : (crime.reg26 > 0 ? 100 : 0);
+                      }
+
+                      // Scrape "Workout %"
+                      const woMatch = chunk.match(/Workout[^\d-]*(-?\d+(?:\.\d+)?)[^\d-]+(-?\d+(?:\.\d+)?)/i);
+                      if (woMatch) {
+                          crime.wo25 = parseFloat(woMatch[1]);
+                          crime.wo26 = parseFloat(woMatch[2]);
+                      }
+
+                      // Scrape "Arrest Rate"
+                      const arMatch = chunk.match(/Arrest Rate[^\d-]*(-?\d+(?:\.\d+)?)[^\d-]+(-?\d+(?:\.\d+)?)/i);
+                      if (arMatch) {
+                          crime.ar25 = parseFloat(arMatch[1]);
+                          crime.ar26 = parseFloat(arMatch[2]);
+                      }
+                  }
+              });
+
+              // 4. Map Totals dynamically from PDF summaries instead of pure mathematical sums
+              const sumCategory = (cat, key) => dynamicData.allCrimes.filter(c => c.category === cat).reduce((sum, c) => sum + (c[key] || 0), 0);
+              const avgCategory = (cat, key) => {
+                  const matches = dynamicData.allCrimes.filter(c => c.category === cat);
+                  if(matches.length === 0) return 0;
+                  return parseFloat((matches.reduce((sum, c) => sum + (c[key] || 0), 0) / matches.length).toFixed(1));
+              };
+
+              // Extract values by specific PDF Labels
+              const extractedData = {
+                  person: extractValuesByLabel("Total Crime Against Person", fullStr) || extractValuesByLabel("Crime Against Person (Total)", fullStr),
+                  property: extractValuesByLabel("Total Crime Against Property", fullStr) || extractValuesByLabel("Crime Against Property (Total)", fullStr),
+                  women: extractValuesByLabel("Total Crime Against Women", fullStr) || extractValuesByLabel("Crime Against Women (Total)", fullStr),
+                  ipc: extractValuesByLabel("Total IPC", fullStr),
+                  lsl: extractValuesByLabel("Total Local & Special Laws", fullStr),
+                  total: extractValuesByLabel("Grand Total", fullStr) || extractValuesByLabel("Total Crime", fullStr)
+              };
+
+              const getVal = (ext, key, fallback) => ext ? ext[key] : fallback;
+
+              // Update Summary Cards using exact extracted values
+              const updateSummaryByExtracted = (id, extData, fallbackCatName) => {
+                  const s = dynamicData.summaries.find(x => x.id === id);
+                  if(s) {
+                      s.val25 = getVal(extData, 'reg25', sumCategory(fallbackCatName, 'reg25'));
+                      s.val26 = getVal(extData, 'reg26', sumCategory(fallbackCatName, 'reg26'));
+                      s.wo25 = getVal(extData, 'wo25', avgCategory(fallbackCatName, 'wo25'));
+                      s.wo26 = getVal(extData, 'wo26', avgCategory(fallbackCatName, 'wo26'));
+                      s.ar25 = getVal(extData, 'ar25', avgCategory(fallbackCatName, 'ar25'));
+                      s.ar26 = getVal(extData, 'ar26', avgCategory(fallbackCatName, 'ar26'));
+                      s.change = s.val25 !== 0 ? parseFloat(((s.val26 - s.val25) / s.val25 * 100).toFixed(1)) : 0;
+                  }
+              };
+
+              updateSummaryByExtracted('person', extractedData.person, 'Crime Against Person');
+              updateSummaryByExtracted('property', extractedData.property, 'Crime Against Property');
+              updateSummaryByExtracted('women', extractedData.women, 'Crime Against Women');
+              updateSummaryByExtracted('lsl', extractedData.lsl, 'Local and Special Laws');
+
+              // Aggregate IPC
+              const sIpc = dynamicData.summaries.find(x => x.id === 'ipc');
+              const fallbackIpc25 = ['Crime Against Person', 'Crime Against Property', 'Crime Against Women', 'Miscellaneous IPC'].reduce((sum, cat) => sum + sumCategory(cat, 'reg25'), 0);
+              const fallbackIpc26 = ['Crime Against Person', 'Crime Against Property', 'Crime Against Women', 'Miscellaneous IPC'].reduce((sum, cat) => sum + sumCategory(cat, 'reg26'), 0);
+              
+              sIpc.val25 = getVal(extractedData.ipc, 'reg25', fallbackIpc25);
+              sIpc.val26 = getVal(extractedData.ipc, 'reg26', fallbackIpc26);
+              sIpc.wo25 = getVal(extractedData.ipc, 'wo25', avgCategory('Miscellaneous IPC', 'wo25')); 
+              sIpc.wo26 = getVal(extractedData.ipc, 'wo26', avgCategory('Miscellaneous IPC', 'wo26'));
+              sIpc.ar25 = getVal(extractedData.ipc, 'ar25', 0); 
+              sIpc.ar26 = getVal(extractedData.ipc, 'ar26', 0);
+              sIpc.change = sIpc.val25 !== 0 ? parseFloat(((sIpc.val26 - sIpc.val25) / sIpc.val25 * 100).toFixed(1)) : 0;
+
+              // Grand Total
+              const sTot = dynamicData.summaries.find(x => x.id === 'total');
+              sTot.val25 = getVal(extractedData.total, 'reg25', sIpc.val25 + sumCategory('Local and Special Laws', 'reg25'));
+              sTot.val26 = getVal(extractedData.total, 'reg26', sIpc.val26 + sumCategory('Local and Special Laws', 'reg26'));
+              sTot.wo25 = getVal(extractedData.total, 'wo25', dynamicData.summaries.find(x => x.id === 'lsl').wo25); 
+              sTot.wo26 = getVal(extractedData.total, 'wo26', dynamicData.summaries.find(x => x.id === 'lsl').wo26);
+              sTot.ar25 = getVal(extractedData.total, 'ar25', 0);
+              sTot.ar26 = getVal(extractedData.total, 'ar26', 0);
+              sTot.change = sTot.val25 !== 0 ? parseFloat(((sTot.val26 - sTot.val25) / sTot.val25 * 100).toFixed(1)) : 0;
+
+              // Populate category chart values mapped from the summaries
+              dynamicData.categories = [
+                  { name: 'Crime Against Person', '2025': dynamicData.summaries.find(x => x.id === 'person').val25, '2026': dynamicData.summaries.find(x => x.id === 'person').val26 },
+                  { name: 'Crime Against Property', '2025': dynamicData.summaries.find(x => x.id === 'property').val25, '2026': dynamicData.summaries.find(x => x.id === 'property').val26 },
+                  { name: 'Crime Against Women', '2025': dynamicData.summaries.find(x => x.id === 'women').val25, '2026': dynamicData.summaries.find(x => x.id === 'women').val26 },
+                  { name: 'Miscellaneous IPC', '2025': sumCategory('Miscellaneous IPC', 'reg25'), '2026': sumCategory('Miscellaneous IPC', 'reg26') },
+                  { name: 'Local/Special Laws', '2025': dynamicData.summaries.find(x => x.id === 'lsl').val25, '2026': dynamicData.summaries.find(x => x.id === 'lsl').val26 }
+              ];
+
+              // Force render the structurally complete new dataset
+              setParsedData(dynamicData);
+              setTimeout(() => { setViewState('dashboard'); }, 500);
+
+            } catch (error) {
+              console.error("Critical failure during native PDF extraction:", error);
+              alert("Sorry, an error occurred while parsing the file. Please ensure it is a valid snapshot PDF report.");
+              setViewState('upload');
+            }
+            
+            // Clear input for subsequent re-uploads
+            if(e.target) e.target.value = '';
+          };
+
+          const handleExportPDF = () => {
+            setIsPrinting(true);
+            setTimeout(() => {
+              window.print();
+              setIsPrinting(false);
+            }, 1000);
+          };
+
+          const filteredCrimes = parsedData.allCrimes.filter(row => 
+            row.head.toLowerCase().includes(searchTerm.toLowerCase())
+          );
+
+          if (viewState === 'upload') {
+            return (
+              <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6 fade-in">
+                <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-8 border border-slate-100 text-center">
+                  <div className="w-20 h-20 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-6">
+                    <UploadCloud size={40} />
+                  </div>
+                  <h2 className="text-2xl font-bold text-slate-800 mb-2">Upload Crime Report</h2>
+                  <p className="text-slate-500 mb-8 text-sm">Select a PDF snapshot report to dynamically extract figures and render the dashboard locally.</p>
+                  
+                  <label 
+                    onDragOver={handleDragOver}
+                    onDrop={processPDFFile}
+                    htmlFor="initial-upload" 
+                    className="border-2 border-dashed border-slate-300 rounded-xl p-8 block cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition-colors"
+                  >
+                    <FileText className="mx-auto text-slate-400 mb-3" size={32} />
+                    <span className="text-sm font-medium text-slate-600">
+                      Drag & Drop PDF or <span className="text-blue-600">Browse</span>
+                    </span>
+                    <input id="initial-upload" type="file" accept=".pdf" className="hidden" onChange={processPDFFile} />
+                  </label>
+                </div>
+              </div>
+            );
+          }
+
+          if (viewState === 'processing') {
+            return (
+              <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6 fade-in">
+                <div className="text-center">
+                  <Activity size={48} className="animate-spin text-blue-600 mx-auto mb-4" />
+                  <h2 className="text-xl font-semibold text-slate-800">Processing Uploaded File...</h2>
+                  <p className="text-sm text-slate-500 mt-2">Dynamically mapping text matrices into tabular variables.</p>
+                </div>
+              </div>
+            );
+          }
+
+          return (
+            <div className="min-h-screen bg-slate-50 text-slate-900 font-sans pb-12 print:bg-white print:pb-0 fade-in">
+              
+              {/* Hidden File Input for the Re-upload action */}
+              <input id="reupload-file" type="file" accept=".pdf" className="hidden" onChange={processPDFFile} />
+
+              {/* Print Preparation Overlay */}
+              {isPrinting && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-white/80 backdrop-blur-sm print:hidden">
+                   <div className="bg-white p-8 rounded-2xl shadow-2xl flex flex-col items-center border border-slate-100">
+                     <Activity size={48} className="animate-spin text-blue-600 mb-4" />
+                     <h2 className="text-2xl font-bold text-slate-800">Preparing PDF Layout...</h2>
+                     <p className="text-sm text-slate-500 mt-2">Rendering all charts and data tables for export.</p>
+                   </div>
+                </div>
+              )}
+
+              <div className="bg-white border-b border-slate-200 sticky top-0 z-20 shadow-sm print:static print:shadow-none print:border-b-2 print:border-slate-800">
+                <div className="max-w-[90rem] mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-col md:flex-row justify-between items-center gap-4 print:max-w-full print:px-0">
+                  <div>
+                    <h1 className="text-2xl font-black flex items-center gap-2 tracking-tight text-slate-900">
+                      <ShieldAlert className="text-blue-600" /> Crime Analysis Dashboard
+                    </h1>
+                    <p className="text-sm font-medium text-slate-500 mt-1 flex items-center gap-2">
+                      <FileDigit size={16} /> {districtName} | <span className="text-slate-700">{reportDateRange}</span>
+                    </p>
+                  </div>
+                  
+                  <div className="flex items-center gap-4 print:hidden">
+                    <div className="flex gap-1 bg-slate-100 p-1 rounded-lg border border-slate-200">
+                      {['overview', 'trends', 'data'].map((tab) => (
+                        <button
+                          key={tab}
+                          onClick={() => setActiveTab(tab)}
+                          className={`px-5 py-2 rounded-md text-sm font-bold transition-all capitalize ${
+                            activeTab === tab ? 'bg-white text-blue-700 shadow-sm ring-1 ring-slate-200' : 'text-slate-500 hover:text-slate-700'
+                          }`}
+                        >
+                          {tab}
+                        </button>
+                      ))}
+                    </div>
+                    
+                    <button onClick={() => document.getElementById('reupload-file').click()} className="flex items-center gap-2 bg-white border-2 border-slate-200 hover:bg-slate-50 text-slate-700 px-4 py-2 rounded-lg text-sm font-bold transition-colors shadow-sm ml-2">
+                      <UploadFileIcon size={16} /> Upload New
+                    </button>
+                    
+                    <button onClick={handleExportPDF} className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors">
+                      <Download size={16} /> Export PDF
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="max-w-[90rem] mx-auto px-4 sm:px-6 lg:px-8 mt-8 print:max-w-full print:px-0 print:mt-4">
+                
+                {/* OVERVIEW TAB */}
+                <div className={`${(!isPrinting && activeTab !== 'overview') ? 'hidden' : ''} space-y-8 fade-in print:block`}>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {parsedData.summaries.map((s) => (
+                      <div key={s.id} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow break-inside-avoid print:border-slate-300">
+                        <div className="flex justify-between items-start mb-4">
+                          <h3 className="text-[13px] font-black text-slate-500 uppercase tracking-widest">{s.title}</h3>
+                          <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold ${
+                            s.change > 0 ? 'bg-red-100 text-red-700' : s.change < 0 ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-700'
+                          }`}>
+                            {s.change > 0 ? <TrendingUp size={14}/> : s.change < 0 ? <TrendingDown size={14}/> : null}
+                            {s.change > 0 ? '+' : ''}{s.change}%
+                          </span>
+                        </div>
+                        
+                        <div className="flex items-baseline gap-2 mb-6">
+                          <span className="text-5xl font-black text-slate-800 tracking-tighter">{s.val26}</span>
+                          <span className="text-sm font-semibold text-slate-400">vs {s.val25} in '25</span>
+                        </div>
+                        
+                        <div className="bg-slate-50 rounded-xl p-4 flex justify-between border border-slate-100 print:bg-white print:border-slate-200">
+                          <div>
+                            <div className="text-[10px] text-slate-400 uppercase font-bold tracking-wider mb-1">Workout %</div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-extrabold text-indigo-700 text-lg">{s.wo26}%</span>
+                              <span className="text-xs font-semibold text-slate-400 line-through decoration-slate-300">{s.wo25}%</span>
+                            </div>
+                          </div>
+                          <div className="w-px bg-slate-200 mx-2"></div>
+                          <div className="text-right">
+                            <div className="text-[10px] text-slate-400 uppercase font-bold tracking-wider mb-1">Arrest Rate</div>
+                            <div className="flex items-center justify-end gap-2">
+                              <span className="font-extrabold text-orange-600 text-lg">{s.ar26}</span>
+                              <span className="text-xs font-semibold text-slate-400 line-through decoration-slate-300">{s.ar25}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm break-inside-avoid print:mt-8 print:p-0 print:border-none print:shadow-none">
+                    <h3 className="text-lg font-black text-slate-800 mb-6 print:text-xl print:border-b print:pb-2">Major Heads Comparison (2025 vs 2026)</h3>
+                    <div className="h-[400px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={parsedData.categories} margin={{ top: 40, right: 10, left: -20, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                          <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 11, fontWeight: 600, fill: '#64748b' }} />
+                          <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#94a3b8' }} />
+                          <Tooltip content={<CustomTooltip />} cursor={{ fill: '#f8fafc' }} />
+                          <Legend iconType="circle" wrapperStyle={{ paddingTop: '20px', fontWeight: 600 }}/>
+                          <Bar dataKey="2025" fill="#cbd5e1" radius={[6, 6, 0, 0]} maxBarSize={80}>
+                            <LabelList content={<CustomBarLabel2025 />} />
+                          </Bar>
+                          <Bar dataKey="2026" fill="#3b82f6" radius={[6, 6, 0, 0]} maxBarSize={80}>
+                            <LabelList content={(props) => <CustomBarLabel2026 {...props} chartData={parsedData.categories} />} />
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+                </div>
+
+                {/* TRENDS TAB */}
+                <div className={`${(!isPrinting && activeTab !== 'trends') ? 'hidden' : ''} print:mt-12 space-y-6 fade-in print:block print:break-before-page`}>
+                  <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm print:p-0 print:border-none print:shadow-none">
+                    <div className="flex flex-col md:flex-row justify-between md:items-center mb-8 border-b pb-4">
+                      <div>
+                        <h3 className="text-xl font-black text-slate-800 print:text-2xl">Specific Crime Trends</h3>
+                        <p className="text-sm text-slate-500 mt-1 font-medium">Complete breakdown of all registered crimes</p>
+                      </div>
+                      <div className="text-sm bg-blue-50 text-blue-700 px-4 py-2 rounded-lg font-semibold mt-4 md:mt-0 flex items-center gap-2 print:hidden">
+                        <AlertCircle size={16} /> Scroll to view all {parsedData.allCrimes.length} categories
+                      </div>
+                    </div>
+                    
+                    <div className="h-[2600px] w-full overflow-visible">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <ComposedChart layout="vertical" data={parsedData.allCrimes} margin={{ top: 0, right: 60, left: 0, bottom: 5 }} barCategoryGap="45%">
+                          <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f1f5f9" />
+                          <XAxis type="number" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8' }} />
+                          <YAxis dataKey="head" type="category" axisLine={false} tickLine={false} tick={(props) => <CustomYAxisTick {...props} fullData={parsedData.allCrimes} />} width={450} />
+                          <Tooltip content={<CustomTooltip />} cursor={{ fill: '#f8fafc' }} isAnimationActive={false} />
+                          <Legend iconType="circle" verticalAlign="top" height={36}/>
+                          <Bar dataKey="reg25" name="2025 Registered" fill="#94a3b8" barSize={16} radius={[0, 4, 4, 0]}>
+                            <LabelList dataKey="reg25" position="right" fill="#334155" fontSize={11} fontWeight={600} />
+                          </Bar>
+                          <Bar dataKey="reg26" name="2026 Registered" fill="#3b82f6" barSize={16} radius={[0, 4, 4, 0]}>
+                            <LabelList dataKey="reg26" position="right" fill="#1e40af" fontSize={11} fontWeight={700} />
+                          </Bar>
+                        </ComposedChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+                </div>
+
+                {/* DATA TABLE TAB */}
+                <div className={`${(!isPrinting && activeTab !== 'data') ? 'hidden' : ''} print:mt-12 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden fade-in print:block print:break-before-page print:border-none print:shadow-none`}>
+                  <div className="p-6 border-b border-slate-200 flex flex-col sm:flex-row justify-between items-center gap-4 bg-slate-50/50 print:bg-transparent print:border-b-2 print:border-slate-800 print:p-0 print:pb-4">
+                    <div>
+                      <h3 className="text-xl font-black text-slate-800 print:text-2xl">Categorized Data Table</h3>
+                      <p className="text-sm text-slate-500 mt-1 font-medium">Detailed numbers extracted directly from uploaded PDF</p>
+                    </div>
+                    <div className="relative w-full sm:w-72 print:hidden">
+                      <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+                        <SearchIcon size={18} />
+                      </div>
+                      <input 
+                        type="text" 
+                        placeholder="Search specific crimes..." 
+                        className="w-full pl-10 pr-4 py-2.5 border border-slate-300 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all shadow-sm"
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  
+                  <div className="overflow-x-auto print:overflow-visible">
+                    <table className="w-full text-left border-collapse min-w-[1000px] print:min-w-0">
+                      <thead>
+                        <tr className="bg-slate-100 text-slate-600 text-[11px] uppercase tracking-widest print:bg-slate-200">
+                          <th className="p-4 font-black w-[20%]">Crime Head</th>
+                          <th className="p-4 font-black text-right w-[8%]">Reg '25</th>
+                          <th className="p-4 font-black text-right w-[8%]">Reg '26</th>
+                          <th className="p-4 font-black text-center w-[20%]">% Change (Visual)</th>
+                          <th className="p-4 font-black text-right w-[11%]">Workout '25</th>
+                          <th className="p-4 font-black text-right w-[11%]">Workout '26</th>
+                          <th className="p-4 font-black text-right w-[11%]">Arrest '25</th>
+                          <th className="p-4 font-black text-right w-[11%]">Arrest '26</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 text-sm">
+                        {categoriesList.map((category) => {
+                          const itemsInCategory = filteredCrimes.filter(c => c.category === category);
+                          if (itemsInCategory.length === 0) return null;
+                          
+                          return (
+                            <Fragment key={category}>
+                              <tr className="bg-slate-50 print:bg-slate-100">
+                                <td colSpan="8" className="p-4 py-3 font-black text-slate-800 text-[13px] uppercase tracking-wider border-l-4 border-slate-900">
+                                  {category}
+                                </td>
+                              </tr>
+                              {itemsInCategory.map((row, idx) => (
+                                <tr key={idx} className="hover:bg-blue-50/50 transition-colors group break-inside-avoid">
+                                  <td className="p-4 pl-6 font-semibold text-slate-700">{row.head}</td>
+                                  <td className="p-4 text-right text-slate-500 font-medium">{row.reg25}</td>
+                                  <td className="p-4 text-right font-black text-slate-900 text-base">{row.reg26}</td>
+                                  <td className="p-4"><DivergingBar value={row.change} /></td>
+                                  <td className="p-4 text-right text-slate-400 font-medium">{row.wo25}%</td>
+                                  <td className="p-4 text-right font-bold text-indigo-700">{row.wo26}%</td>
+                                  <td className="p-4 text-right text-slate-400 font-medium">{row.ar25}</td>
+                                  <td className="p-4 text-right font-bold text-orange-600">{row.ar26}</td>
+                                </tr>
+                              ))}
+                            </Fragment>
+                          );
+                        })}
+                        {filteredCrimes.length === 0 && (
+                          <tr>
+                            <td colSpan="8" className="p-12 text-center text-slate-500 font-medium">
+                              No records found matching "{searchTerm}"
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
