@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Advanced Criminal Network & Gang Analyzer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    
+    <style>
+        body { background-color: #f3f4f6; color: #1f2937; }
+        .spinner { border: 4px solid rgba(0, 0, 0, 0.1); border-left-color: #3b82f6; border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite; display: inline-block; vertical-align: middle; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border: 1px solid #e5e7eb; padding: 8px 12px; text-align: left; }
+        th { background-color: #1f2937; color: white; position: sticky; top: 0; z-index: 10; }
+        .table-container { max-height: 650px; overflow-y: auto; }
+        .hidden { display: none !important; }
+        
+        /* Custom row colors for intelligence profiling */
+        .role-hub { border-left: 4px solid #dc2626 !important; background-color: #fef2f2; }
+        .role-core { border-left: 4px solid #ea580c !important; }
+        .role-peri { border-left: 4px solid #ca8a04 !important; }
+    </style>
+</head>
+<body class="p-8">
+
+    <div class="max-w-screen-2xl mx-auto bg-white p-8 rounded-lg shadow-md">
+        
+        <h1 class="text-3xl font-bold mb-2 flex items-center gap-2">🛡️ Advanced Criminal Network Analyzer</h1>
+        <p class="text-gray-600 mb-6">Automated intelligence extraction, entity resolution, and network profiling from arrest records.</p>
+        
+        <div class="bg-blue-50 border-l-4 border-blue-500 p-4 mb-6">
+            <h3 class="font-bold text-blue-800">Intelligence Engine Parameters:</h3>
+            <p class="text-sm text-blue-700 mt-1">The tool uses fuzzy-logic to auto-match column variations. Ensure your file contains variations of:<br>
+            <strong>Required:</strong> <code class="bg-white px-1 rounded font-mono">FIR NO</code> | <code class="bg-white px-1 rounded font-mono">Name</code> | <code class="bg-white px-1 rounded font-mono">Relative Name</code> | <code class="bg-white px-1 rounded font-mono">Address (or Accused Address)</code></p>
+        </div>
+
+        <!-- File Upload Area -->
+        <div class="border-2 border-dashed border-gray-300 rounded-lg p-10 text-center mb-6 bg-gray-50 hover:bg-gray-100 transition-colors">
+            <input type="file" id="fileInput" accept=".csv, .xlsx, .xls" class="hidden" onchange="handleFileSelect(event)">
+            <label for="fileInput" class="cursor-pointer bg-slate-800 text-white px-6 py-3 rounded-lg font-semibold hover:bg-slate-900 transition shadow-lg">
+                Upload Arrest Records Database (CSV/Excel)
+            </label>
+            <p class="text-gray-500 mt-4 text-sm font-mono" id="fileNameDisplay">Awaiting file input...</p>
+        </div>
+
+        <!-- DEDICATED ERROR CONSOLE -->
+        <div id="errorConsole" class="hidden mb-6 bg-red-50 border border-red-400 rounded-lg p-4 shadow-sm">
+            <h3 class="text-red-800 font-bold flex items-center gap-2">
+                ⚠️ Processing Errors Detected
+            </h3>
+            <ul id="errorList" class="list-disc list-inside text-sm text-red-700 mt-2 space-y-1">
+                <!-- Errors injected here -->
+            </ul>
+        </div>
+
+        <!-- Status & Loading -->
+        <div id="statusArea" class="hidden mb-6 p-4 rounded-lg font-medium flex items-center gap-3">
+            <div id="loadingSpinner" class="spinner hidden"></div>
+            <span id="statusText">Processing...</span>
+        </div>
+
+        <!-- Main Dashboard (Hidden initially) -->
+        <div id="dashboard" class="hidden">
+            
+            <hr class="my-6">
+            <h2 class="text-2xl font-bold mb-4">📊 Intelligence Summary</h2>
+            <div class="grid grid-cols-3 gap-4 mb-8">
+                <div class="bg-slate-50 border border-slate-200 rounded-lg p-4 text-center shadow-sm">
+                    <p class="text-slate-500 text-sm font-bold uppercase tracking-wider mb-1">Total Records</p>
+                    <p class="text-3xl font-black text-slate-800" id="totalRecords">-</p>
+                </div>
+                <div class="bg-red-50 border border-red-200 rounded-lg p-4 text-center shadow-sm">
+                    <p class="text-red-700 text-sm font-bold uppercase tracking-wider mb-1">Organized Gangs</p>
+                    <p class="text-3xl font-black text-red-700" id="totalGangs">-</p>
+                </div>
+                <div class="bg-amber-50 border border-amber-200 rounded-lg p-4 text-center shadow-sm">
+                    <p class="text-amber-700 text-sm font-bold uppercase tracking-wider mb-1">Independent Offenders</p>
+                    <p class="text-3xl font-black text-amber-700" id="totalIndependents">-</p>
+                </div>
+            </div>
+
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-2xl font-bold">🔍 Network Database & Profiling</h2>
+                <div class="flex gap-3">
+                    <button onclick="exportData('csv')" class="bg-slate-800 text-white px-4 py-2 rounded shadow hover:bg-slate-900 text-sm font-semibold flex items-center gap-2">Download CSV</button>
+                    <button onclick="exportData('xlsx')" class="bg-green-700 text-white px-4 py-2 rounded shadow hover:bg-green-800 text-sm font-semibold flex items-center gap-2">Download Excel</button>
+                </div>
+            </div>
+
+            <!-- Search Filters -->
+            <div class="grid grid-cols-4 gap-4 mb-4">
+                <input type="text" id="searchName" placeholder="Filter by Name..." class="border border-slate-300 rounded p-2 focus:ring focus:ring-blue-200" oninput="renderTable()">
+                <input type="text" id="searchRel" placeholder="Filter by Relative..." class="border border-slate-300 rounded p-2 focus:ring focus:ring-blue-200" oninput="renderTable()">
+                <input type="text" id="searchFir" placeholder="Filter by FIR No..." class="border border-slate-300 rounded p-2 focus:ring focus:ring-blue-200" oninput="renderTable()">
+                <input type="text" id="searchAdd" placeholder="Filter by Address..." class="border border-slate-300 rounded p-2 focus:ring focus:ring-blue-200" oninput="renderTable()">
+            </div>
+
+            <div class="flex justify-between items-end mb-2">
+                <p class="text-sm font-bold text-slate-600" id="searchResultCount"></p>
+                <div class="flex gap-4 text-xs font-semibold text-slate-500">
+                    <span class="flex items-center gap-1"><span class="w-3 h-3 block bg-red-600 rounded-sm"></span> Primary Hub (Leader)</span>
+                    <span class="flex items-center gap-1"><span class="w-3 h-3 block bg-orange-500 rounded-sm"></span> Core Associate</span>
+                    <span class="flex items-center gap-1"><span class="w-3 h-3 block bg-yellow-500 rounded-sm"></span> Peripheral Associate</span>
+                </div>
+            </div>
+
+            <div class="table-container border rounded shadow-sm">
+                <table id="mainTable" class="text-sm">
+                    <thead>
+                        <tr>
+                            <th>Network ID</th>
+                            <th>Intelligence Role</th>
+                            <th>FIR No</th>
+                            <th>Target Name</th>
+                            <th>Relative Name</th>
+                            <th>Address</th>
+                            <th>Arrest Date</th>
+                            <th>Sections Applied</th>
+                            <th>Entity Merge Reason</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+            <p class="text-xs text-slate-400 mt-2 font-mono">* Display limit: 500 rows to optimize browser rendering. Use the export functions to access the complete database.</p>
+        </div>
+    </div>
+
+    <!-- MAIN LOGIC SCRIPT -->
+    <script>
+        let globalData = [];
+        let filteredData = [];
+
+        // --- FUZZY MATCHING UTILITIES ---
+        function levenshtein(a, b) {
+            if (a.length === 0) return b.length;
+            if (b.length === 0) return a.length;
+            let matrix = [];
+            for (let i = 0; i <= b.length; i++) matrix[i] = [i];
+            for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+            for (let i = 1; i <= b.length; i++) {
+                for (let j = 1; j <= a.length; j++) {
+                    if (b.charAt(i - 1) === a.charAt(j - 1)) {
+                        matrix[i][j] = matrix[i - 1][j - 1];
+                    } else {
+                        matrix[i][j] = Math.min(matrix[i - 1][j - 1] + 1, Math.min(matrix[i][j - 1] + 1, matrix[i - 1][j] + 1));
+                    }
+                }
+            }
+            return matrix[b.length][a.length];
+        }
+
+        function ratio(a, b) {
+            let maxLen = Math.max(a.length, b.length);
+            if (maxLen === 0) return 100;
+            return ((1 - levenshtein(a, b) / maxLen) * 100);
+        }
+
+        function cleanStr(str) {
+            return (str || "").toString().toLowerCase().replace(/[^\w\s]/gi, '').replace(/\s+/g, ' ').trim();
+        }
+
+        function tokenSortRatio(s1, s2) {
+            let t1 = cleanStr(s1).split(' ').sort().join(' ');
+            let t2 = cleanStr(s2).split(' ').sort().join(' ');
+            return ratio(t1, t2);
+        }
+
+        function tokenSetRatio(s1, s2) {
+            let t1 = new Set(cleanStr(s1).split(' '));
+            let t2 = new Set(cleanStr(s2).split(' '));
+            let intersection = [...t1].filter(x => t2.has(x)).sort().join(' ');
+            let diff1 = [...t1].filter(x => !t2.has(x)).sort().join(' ');
+            let diff2 = [...t2].filter(x => !t1.has(x)).sort().join(' ');
+            
+            let combined1 = intersection + " " + diff1;
+            let combined2 = intersection + " " + diff2;
+            
+            let r1 = ratio(intersection, intersection + " " + diff1);
+            let r2 = ratio(intersection, intersection + " " + diff2);
+            let r3 = ratio(combined1.trim(), combined2.trim());
+            return Math.max(r1, r2, r3);
+        }
+
+        class UnionFind {
+            constructor() { this.parent = {}; this.reasons = {}; }
+            add(i) { if (this.parent[i] === undefined) { this.parent[i] = i; this.reasons[i] = []; } }
+            find(i) {
+                if (this.parent[i] === undefined) this.add(i);
+                if (this.parent[i] !== i) this.parent[i] = this.find(this.parent[i]);
+                return this.parent[i];
+            }
+            union(i, j, reason) {
+                let rootI = this.find(i);
+                let rootJ = this.find(j);
+                if (rootI !== rootJ) {
+                    this.parent[rootI] = rootJ;
+                    if(reason) this.reasons[rootJ].push(reason);
+                } else if (reason && !this.reasons[rootJ].includes(reason)){
+                    this.reasons[rootJ].push(reason);
+                }
+            }
+            getGroups() {
+                let groups = {};
+                for (let i in this.parent) {
+                    let root = this.find(i);
+                    if (!groups[root]) groups[root] = [];
+                    groups[root].push(i);
+                }
+                return Object.values(groups);
+            }
+            getReason(i) {
+                let root = this.find(i);
+                return this.reasons[root] && this.reasons[root].length > 0 ? this.reasons[root].join(" | ") : "Single Entry (No Merges)";
+            }
+        }
+
+        function setStatus(msg, showSpinner=false) {
+            const statusArea = document.getElementById('statusArea');
+            const statusText = document.getElementById('statusText');
+            const spinner = document.getElementById('loadingSpinner');
+            statusArea.classList.remove('hidden', 'bg-blue-100', 'text-blue-700', 'bg-green-100', 'text-green-700');
+            
+            if (showSpinner) {
+                statusArea.classList.add('bg-blue-100', 'text-blue-700');
+                spinner.classList.remove('hidden');
+            } else {
+                statusArea.classList.add('bg-green-100', 'text-green-700');
+                spinner.classList.add('hidden');
+            }
+            statusText.innerText = msg;
+        }
+
+        function showErrorConsole(errors) {
+            const errorConsole = document.getElementById('errorConsole');
+            const errorList = document.getElementById('errorList');
+            const statusArea = document.getElementById('statusArea');
+            
+            statusArea.classList.add('hidden'); // Hide normal status
+            errorList.innerHTML = "";
+            
+            errors.forEach(err => {
+                let li = document.createElement('li');
+                li.innerText = err;
+                errorList.appendChild(li);
+            });
+            errorConsole.classList.remove('hidden');
+        }
+
+        function normalizeColumns(data) {
+            if(data.length === 0) return [];
+            let headers = Object.keys(data[0]);
+            
+            const colMapping = {
+                'FIR NO': ['FIR NO', 'FIR', 'FIR NUMBER', 'FIR_NO'],
+                'Name': ['NAME', 'ACCUSED NAME', 'OTHER ACCUSED NAME', 'NAME OF ACCUSED', 'PERSON NAME'],
+                'Relative Name': ['RELATIVE NAME', 'FATHER NAME', 'S/O', 'D/O', 'W/O', 'GUARDIAN'],
+                'Address': ['ADDRESS', 'R/O', 'RESIDENCE', 'ACCUSED ADDRESS', 'RESIDENTIAL ADDRESS'], // Added Accused Address
+                'Date of Arrest': ['DATE OF ARREST', 'ARREST DATE', 'DATE', 'DATE OF ARST'],
+                'Sections of Law': ['SECTIONS OF LAW', 'SECTIONS', 'SECTIONS AS PER INVESTIGATION', 'LAW SECTIONS', 'UNDER SECTION']
+            };
+
+            let mappedData = [];
+            let renameDict = {};
+
+            headers.forEach(h => {
+                let upperH = h.trim().toUpperCase();
+                for (let [target, variations] of Object.entries(colMapping)) {
+                    if (variations.includes(upperH) && !Object.values(renameDict).includes(target)) {
+                        renameDict[h] = target;
+                        break;
+                    }
+                }
+            });
+
+            data.forEach(row => {
+                let newRow = {};
+                for(let key in row) {
+                    if(renameDict[key]) newRow[renameDict[key]] = row[key];
+                    else newRow[key] = row[key];
+                }
+                if(newRow['FIR NO'] && newRow['Name']) { // Drop entirely empty processing rows
+                    mappedData.push(newRow);
+                }
+            });
+            return mappedData;
+        }
+
+        // Custom Sorting: Independents always at the bottom
+        function intelligenceSort(a, b) {
+            let isAInd = a['Gang Name'] === "Independent Offender";
+            let isBInd = b['Gang Name'] === "Independent Offender";
+            
+            if (isAInd && !isBInd) return 1;
+            if (!isAInd && isBInd) return -1;
+            
+            // If both are same category, sort alphabetically by gang name
+            let gangCompare = a['Gang Name'].localeCompare(b['Gang Name']);
+            if (gangCompare !== 0) return gangCompare;
+            
+            // Within same gang, sort by Intelligence Role priority (Hub -> Core -> Peri)
+            let rolePriority = {"Primary Hub (Leader)": 1, "Core Associate": 2, "Peripheral Associate": 3, "Lone Actor": 4, "Unknown": 5};
+            let roleA = rolePriority[a['Network Role']] || 5;
+            let roleB = rolePriority[b['Network Role']] || 5;
+            
+            return roleA - roleB;
+        }
+
+        async function processData(data) {
+            try {
+                document.getElementById('errorConsole').classList.add('hidden'); // Reset errors
+                
+                let rawLength = data.length;
+                data = normalizeColumns(data);
+                
+                let errors = [];
+                if(data.length === 0) errors.push(`No valid data rows found. Parsed ${rawLength} raw rows but none contained both a Name and FIR Number.`);
+                
+                let required = ['FIR NO', 'Name', 'Relative Name', 'Address'];
+                if(data.length > 0) {
+                    let missing = required.filter(r => !Object.keys(data[0]).includes(r));
+                    if (missing.length > 0) {
+                        errors.push(`Missing Required Columns: The file must contain variations of [${missing.join(", ")}].`);
+                    }
+                }
+
+                if (errors.length > 0) {
+                    showErrorConsole(errors);
+                    return; // Stop execution
+                }
+
+                setStatus("Step 1/3: Deep Entity Resolution & Alias Matching...", true);
+                await new Promise(resolve => setTimeout(resolve, 50)); 
+                
+                let entityUF = new UnionFind();
+                data.forEach((r, i) => entityUF.add(i));
+
+                let blocks = { name: {}, rel: {}, add: {} };
+                data.forEach((r, i) => {
+                    let n = cleanStr(r['Name']).substring(0,3);
+                    let rel = cleanStr(r['Relative Name']).substring(0,3);
+                    let add = cleanStr(r['Address']).substring(0,5);
+                    if(n) { blocks.name[n] = blocks.name[n] || []; blocks.name[n].push(i); }
+                    if(rel) { blocks.rel[rel] = blocks.rel[rel] || []; blocks.rel[rel].push(i); }
+                    if(add) { blocks.add[add] = blocks.add[add] || []; blocks.add[add].push(i); }
+                });
+
+                let checked = new Set();
+                let evaluate = (i, j) => {
+                    let key = i < j ? `${i}-${j}` : `${j}-${i}`;
+                    if(checked.has(key)) return;
+                    checked.add(key);
+
+                    let ri = data[i], rj = data[j];
+                    if(!ri['Name'] || !rj['Name'] || !ri['Relative Name'] || !rj['Relative Name'] || !ri['Address'] || !rj['Address']) return;
+
+                    let nSim = tokenSortRatio(ri['Name'], rj['Name']);
+                    if (nSim < 90) return;
+                    let relSim = tokenSortRatio(ri['Relative Name'], rj['Relative Name']);
+                    if (relSim < 80) return;
+                    let addSim = tokenSetRatio(ri['Address'], rj['Address']);
+                    if (addSim < 80) return;
+
+                    let reason = `Sim Match (Name: ${Math.round(nSim)}%, Rel: ${Math.round(relSim)}%, Add: ${Math.round(addSim)}%)`;
+                    entityUF.union(i, j, reason);
+                };
+
+                for(let bType in blocks) {
+                    for(let bKey in blocks[bType]) {
+                        let idxs = blocks[bType][bKey];
+                        if(idxs.length > 1 && idxs.length < 500) {
+                            for(let i=0; i<idxs.length; i++) {
+                                for(let j=i+1; j<idxs.length; j++) evaluate(idxs[i], idxs[j]);
+                            }
+                        }
+                    }
+                }
+
+                data.forEach((r, i) => {
+                    r['Person_ID'] = "PID_" + entityUF.find(i);
+                    r['Entity_Merge_Reason'] = entityUF.getReason(i);
+                });
+
+                setStatus("Step 2/3: Mapping Network Topologies...", true);
+                await new Promise(resolve => setTimeout(resolve, 50));
+                
+                let gangUF = new UnionFind();
+                let firGroups = {};
+                data.forEach(r => {
+                    let fir = r['FIR NO'];
+                    if(!firGroups[fir]) firGroups[fir] = [];
+                    firGroups[fir].push(r['Person_ID']);
+                });
+
+                for(let fir in firGroups) {
+                    let pids = [...new Set(firGroups[fir])];
+                    for(let i=0; i<pids.length; i++) gangUF.add(pids[i]);
+                    for(let i=0; i<pids.length; i++) {
+                        for(let j=i+1; j<pids.length; j++) {
+                            gangUF.union(pids[i], pids[j]);
+                        }
+                    }
+                }
+
+                setStatus("Step 3/3: Executing Intelligence Profiling & Role Scoring...", true);
+                await new Promise(resolve => setTimeout(resolve, 50));
+
+                let pidFirCount = {};
+                let pidNameMap = {};
+                let pidRelMap = {};
+                data.forEach(r => {
+                    let pid = r['Person_ID'];
+                    pidFirCount[pid] = pidFirCount[pid] || new Set();
+                    pidFirCount[pid].add(r['FIR NO']);
+                    pidNameMap[pid] = pidNameMap[pid] || r['Name'];
+                    pidRelMap[pid] = pidRelMap[pid] || r['Relative Name'];
+                });
+
+                let gangs = gangUF.getGroups();
+                let gangMapping = {};
+                let roleMapping = {};
+
+                gangs.forEach((gangArray, index) => {
+                    // Find the leader (Hub)
+                    let leaderPid = gangArray.reduce((maxPid, currPid) => 
+                        (pidFirCount[currPid].size > pidFirCount[maxPid].size) ? currPid : maxPid
+                    , gangArray[0]);
+
+                    let leaderName = (pidNameMap[leaderPid] || "UNKNOWN").toString().toUpperCase();
+                    let leaderRel = (pidRelMap[leaderPid] || "UNKNOWN").toString().toUpperCase();
+                    
+                    let isIndependent = (gangArray.length === 1 && pidFirCount[leaderPid].size === 1);
+                    let gName = isIndependent ? "Independent Offender" : `${leaderName} (S/o ${leaderRel}) GANG [Gang ID #${index+1}]`;
+
+                    // Intelligence Profiling Loop
+                    gangArray.forEach(pid => {
+                        gangMapping[pid] = gName;
+                        
+                        if (isIndependent) {
+                            roleMapping[pid] = "Lone Actor";
+                        } else if (pid === leaderPid) {
+                            roleMapping[pid] = "Primary Hub (Leader)";
+                        } else if (pidFirCount[pid].size > 1) {
+                            roleMapping[pid] = "Core Associate"; // Multi-FIR associate
+                        } else {
+                            roleMapping[pid] = "Peripheral Associate"; // Single-FIR associate
+                        }
+                    });
+                });
+
+                data.forEach(r => {
+                    r['Gang Name'] = gangMapping[r['Person_ID']];
+                    r['Network Role'] = roleMapping[r['Person_ID']];
+                });
+
+                // Apply custom intelligence sort (Independents last)
+                data.sort(intelligenceSort);
+                
+                globalData = data;
+                setStatus("Analysis Complete! Generating intelligence dashboard...", false);
+                buildDashboard();
+
+            } catch (err) {
+                showErrorConsole(["Fatal System Error: " + err.message]);
+            }
+        }
+
+        function handleFileSelect(evt) {
+            const file = evt.target.files[0];
+            if (!file) return;
+            document.getElementById('fileNameDisplay').innerText = file.name;
+            document.getElementById('dashboard').classList.add('hidden');
+            document.getElementById('errorConsole').classList.add('hidden');
+            setStatus("Reading secure file format...", true);
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const data = e.target.result;
+                try {
+                    if (file.name.endsWith('.csv')) {
+                        let parsed = Papa.parse(data, { header: true, skipEmptyLines: true });
+                        let rows = parsed.data;
+                        if (rows.length > 6 && !Object.keys(rows[0]).some(k => k.toUpperCase().includes('FIR'))) {
+                            let rawText = data.split('\n').slice(6).join('\n');
+                            rows = Papa.parse(rawText, { header: true, skipEmptyLines: true }).data;
+                        }
+                        processData(rows);
+                    } else {
+                        let workbook = XLSX.read(data, { type: 'binary' });
+                        let sheetName = workbook.SheetNames[0];
+                        let rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: "" });
+                        if (rows.length > 6 && !Object.keys(rows[0]).some(k => k.toUpperCase().includes('FIR'))) {
+                            rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { range: 6, defval: "" });
+                        }
+                        processData(rows);
+                    }
+                } catch (err) {
+                    showErrorConsole(["Failed to read file. Ensure it is a valid CSV or Excel document."]);
+                }
+            };
+            if(file.name.endsWith('.csv')) reader.readAsText(file);
+            else reader.readAsBinaryString(file);
+        }
+
+        // --- DASHBOARD & RENDERING ---
+        function buildDashboard() {
+            document.getElementById('dashboard').classList.remove('hidden');
+            document.getElementById('totalRecords').innerText = globalData.length;
+            
+            let majorGangs = globalData.filter(r => r['Gang Name'] !== "Independent Offender");
+            let indeps = globalData.filter(r => r['Gang Name'] === "Independent Offender");
+            
+            let uniqueGangs = [...new Set(majorGangs.map(r => r['Gang Name']))];
+            let uniqueIndeps = [...new Set(indeps.map(r => r['Person_ID']))];
+            
+            document.getElementById('totalGangs').innerText = uniqueGangs.length;
+            document.getElementById('totalIndependents').innerText = uniqueIndeps.length;
+
+            renderTable();
+        }
+
+        function renderTable() {
+            let sName = document.getElementById('searchName').value.toLowerCase();
+            let sRel = document.getElementById('searchRel').value.toLowerCase();
+            let sFir = document.getElementById('searchFir').value.toLowerCase();
+            let sAdd = document.getElementById('searchAdd').value.toLowerCase();
+
+            filteredData = globalData.filter(r => {
+                return (r['Name']||"").toLowerCase().includes(sName) &&
+                       (r['Relative Name']||"").toLowerCase().includes(sRel) &&
+                       (r['FIR NO']||"").toLowerCase().includes(sFir) &&
+                       (r['Address']||"").toLowerCase().includes(sAdd);
+            });
+
+            document.getElementById('searchResultCount').innerText = `${filteredData.length} intelligence records found.`;
+
+            let tbody = document.querySelector('#mainTable tbody');
+            tbody.innerHTML = "";
+            
+            let renderLimit = Math.min(filteredData.length, 500);
+            let currentGang = null;
+
+            for(let i=0; i < renderLimit; i++) {
+                let r = filteredData[i];
+                
+                // Visual Separator for Gangs
+                if (currentGang !== null && currentGang !== r['Gang Name']) {
+                    let sep = document.createElement('tr');
+                    sep.innerHTML = `<td colspan="9" class="bg-slate-300 h-2 p-0 border-0"></td>`;
+                    tbody.appendChild(sep);
+                }
+
+                // Determine Row Styling based on Intel Role
+                let roleClass = "";
+                let roleTag = `<span class="bg-slate-100 text-slate-700 px-2 py-1 rounded text-xs border border-slate-300">${r['Network Role']}</span>`;
+                
+                if (r['Network Role'] === 'Primary Hub (Leader)') {
+                    roleClass = "role-hub font-semibold";
+                    roleTag = `<span class="bg-red-100 text-red-800 px-2 py-1 rounded text-xs border border-red-300 shadow-sm whitespace-nowrap">Primary Hub (Leader)</span>`;
+                } else if (r['Network Role'] === 'Core Associate') {
+                    roleClass = "role-core";
+                    roleTag = `<span class="bg-orange-100 text-orange-800 px-2 py-1 rounded text-xs border border-orange-300 shadow-sm whitespace-nowrap">Core Associate</span>`;
+                } else if (r['Network Role'] === 'Peripheral Associate') {
+                    roleClass = "role-peri";
+                    roleTag = `<span class="bg-yellow-100 text-yellow-800 px-2 py-1 rounded text-xs border border-yellow-300 shadow-sm whitespace-nowrap">Peripheral Associate</span>`;
+                }
+
+                let tr = document.createElement('tr');
+                tr.className = roleClass + " hover:bg-slate-50 transition-colors";
+                
+                let gangCell = r['Gang Name'] === "Independent Offender" 
+                    ? `<span class="text-slate-500 italic">${r['Gang Name']}</span>` 
+                    : `<span class="font-bold text-slate-800">${r['Gang Name']}</span>`;
+
+                tr.innerHTML = `
+                    <td class="bg-slate-50">${gangCell}</td>
+                    <td>${roleTag}</td>
+                    <td class="font-mono text-slate-600">${r['FIR NO'] || ''}</td>
+                    <td class="font-bold">${r['Name'] || ''}</td>
+                    <td>${r['Relative Name'] || ''}</td>
+                    <td class="truncate max-w-xs" title="${r['Address'] || ''}">${r['Address'] || ''}</td>
+                    <td class="whitespace-nowrap">${r['Date of Arrest'] || ''}</td>
+                    <td class="truncate max-w-xs text-xs" title="${r['Sections of Law'] || ''}">${r['Sections of Law'] || ''}</td>
+                    <td class="text-xs text-slate-500 truncate max-w-xs" title="${r['Entity_Merge_Reason']}">${r['Entity_Merge_Reason']}</td>
+                `;
+                tbody.appendChild(tr);
+                currentGang = r['Gang Name'];
+            }
+        }
+
+        // --- EXPORT FUNCTIONALITY ---
+        function getExportDataWithBlanks() {
+            let exportCols = ['Gang Name', 'Network Role', 'FIR NO', 'Name', 'Relative Name', 'Date of Arrest', 'Sections of Law', 'Address', 'Entity_Merge_Reason'];
+            let finalOutput = [];
+            let currentGang = null;
+
+            filteredData.forEach(r => {
+                if (currentGang !== null && r['Gang Name'] !== currentGang) {
+                    let emptyRow = {};
+                    exportCols.forEach(c => emptyRow[c] = "");
+                    finalOutput.push(emptyRow);
+                }
+                let outRow = {};
+                exportCols.forEach(c => outRow[c] = r[c] !== undefined ? r[c] : "");
+                finalOutput.push(outRow);
+                currentGang = r['Gang Name'];
+            });
+            return finalOutput;
+        }
+
+        function exportData(type) {
+            let data = getExportDataWithBlanks();
+            if(data.length === 0) return alert("No intelligence data available to export.");
+
+            let filename = `Network_Intelligence_Report_${new Date().toISOString().split('T')[0]}`;
+
+            if (type === 'csv') {
+                let csv = Papa.unparse(data);
+                let blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                let url = URL.createObjectURL(blob);
+                let link = document.createElement("a");
+                link.setAttribute("href", url);
+                link.setAttribute("download", filename + ".csv");
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            } else if (type === 'xlsx') {
+                let ws = XLSX.utils.json_to_sheet(data);
+                
+                // Auto-size columns slightly for better Excel UX
+                const wscols = exportCols = ['Gang Name', 'Network Role', 'FIR NO', 'Name', 'Relative Name', 'Date of Arrest', 'Sections of Law', 'Address', 'Entity_Merge_Reason'].map(w => ({wch: Math.max(w.length + 5, 15)}));
+                ws['!cols'] = wscols;
+
+                let wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, "Network Intel");
+                XLSX.writeFile(wb, filename + ".xlsx");
+            }
+        }
+    </script>
+</body>
+</html>

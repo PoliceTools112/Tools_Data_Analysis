@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Criminal Network & Gang Analyzer</title>
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- PapaParse for CSV reading -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <!-- SheetJS for Excel reading/writing -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    
+    <style>
+        body { background-color: #f3f4f6; color: #1f2937; }
+        .spinner { border: 4px solid rgba(0, 0, 0, 0.1); border-left-color: #3b82f6; border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite; display: inline-block; vertical-align: middle; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border: 1px solid #e5e7eb; padding: 8px 12px; text-align: left; }
+        th { background-color: #f9fafb; position: sticky; top: 0; z-index: 10; }
+        .table-container { max-height: 600px; overflow-y: auto; }
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body class="p-8">
+
+    <div class="max-w-7xl mx-auto bg-white p-8 rounded-lg shadow-md">
+        
+        <h1 class="text-3xl font-bold mb-2 flex items-center gap-2">🛡️ Criminal Network & Gang Analyzer</h1>
+        <p class="text-gray-600 mb-6">Upload your arrest records file to identify network linkages and distinct gangs. Runs entirely offline in your browser.</p>
+        
+        <div class="bg-blue-50 border-l-4 border-blue-500 p-4 mb-8">
+            <h3 class="font-bold text-blue-800">Required Column Headers:</h3>
+            <p class="text-sm text-blue-700 mt-1">The tool auto-matches variations, but for guaranteed results, format your input file with these exact headings. <br>
+            <strong>Strictly Required:</strong> <code class="bg-white px-1 rounded">FIR NO</code> | <code class="bg-white px-1 rounded">Name</code> | <code class="bg-white px-1 rounded">Relative Name</code> | <code class="bg-white px-1 rounded">Address</code><br>
+            <strong>Optional (will be blank if missing):</strong> <code class="bg-white px-1 rounded">Date of Arrest</code> | <code class="bg-white px-1 rounded">Sections of Law</code></p>
+        </div>
+
+        <!-- File Upload Area -->
+        <div class="border-2 border-dashed border-gray-300 rounded-lg p-10 text-center mb-8 bg-gray-50 hover:bg-gray-100 transition-colors">
+            <input type="file" id="fileInput" accept=".csv, .xlsx, .xls" class="hidden" onchange="handleFileSelect(event)">
+            <label for="fileInput" class="cursor-pointer bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-700 transition">
+                Browse CSV or Excel File
+            </label>
+            <p class="text-gray-500 mt-3 text-sm" id="fileNameDisplay">No file selected</p>
+        </div>
+
+        <!-- Status & Loading -->
+        <div id="statusArea" class="hidden mb-8 p-4 rounded-lg font-medium flex items-center gap-3">
+            <div id="loadingSpinner" class="spinner hidden"></div>
+            <span id="statusText">Processing...</span>
+        </div>
+
+        <!-- Main Dashboard (Hidden initially) -->
+        <div id="dashboard" class="hidden">
+            
+            <hr class="my-8">
+            <h2 class="text-2xl font-bold mb-4">📊 Executive Summary</h2>
+            <div class="grid grid-cols-2 gap-6 mb-8">
+                <div class="bg-gray-50 border border-gray-200 rounded-lg p-6 text-center">
+                    <p class="text-gray-500 font-semibold mb-1">Total Arrest Records</p>
+                    <p class="text-4xl font-bold text-blue-600" id="totalRecords">-</p>
+                </div>
+                <div class="bg-gray-50 border border-gray-200 rounded-lg p-6 text-center">
+                    <p class="text-gray-500 font-semibold mb-1">Distinct Gangs Identified</p>
+                    <p class="text-4xl font-bold text-red-600" id="totalGangs">-</p>
+                </div>
+            </div>
+
+            <h3 class="text-xl font-bold mb-4">🔥 Top 10 Gangs by FIR Count</h3>
+            <div class="table-container mb-8 border rounded">
+                <table id="topGangsTable">
+                    <thead><tr><th>Rank</th><th>Gang Name</th><th>Total Unique FIRs</th></tr></thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+
+            <hr class="my-8">
+            
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-2xl font-bold">🔍 Global Database Search</h2>
+                <div class="flex gap-4">
+                    <button onclick="exportData('csv')" class="bg-gray-800 text-white px-4 py-2 rounded hover:bg-gray-900 text-sm font-semibold flex gap-2">📄 Download CSV</button>
+                    <button onclick="exportData('xlsx')" class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 text-sm font-semibold flex gap-2">📊 Download Excel</button>
+                </div>
+            </div>
+
+            <!-- Search Filters -->
+            <div class="grid grid-cols-4 gap-4 mb-6">
+                <input type="text" id="searchName" placeholder="Search Name..." class="border rounded p-2" oninput="renderTable()">
+                <input type="text" id="searchRel" placeholder="Search Relative..." class="border rounded p-2" oninput="renderTable()">
+                <input type="text" id="searchFir" placeholder="Search FIR No..." class="border rounded p-2" oninput="renderTable()">
+                <input type="text" id="searchAdd" placeholder="Search Address..." class="border rounded p-2" oninput="renderTable()">
+            </div>
+
+            <p class="text-sm text-gray-500 mb-2" id="searchResultCount"></p>
+            <div class="table-container border rounded">
+                <table id="mainTable" class="text-sm">
+                    <thead>
+                        <tr>
+                            <th>Gang Name</th>
+                            <th>FIR No</th>
+                            <th>Name</th>
+                            <th>Relative Name</th>
+                            <th>Date of Arrest</th>
+                            <th>Sections of Law</th>
+                            <th>Address</th>
+                            <th>Entity Merge Reason</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+            <p class="text-xs text-gray-400 mt-2">* Displaying up to 500 rows to prevent browser lag. Export the file to view all records.</p>
+        </div>
+    </div>
+
+    <!-- MAIN LOGIC SCRIPT -->
+    <script>
+        let globalData = [];
+        let filteredData = [];
+
+        // --- FUZZY MATCHING UTILITIES ---
+        function levenshtein(a, b) {
+            if (a.length === 0) return b.length;
+            if (b.length === 0) return a.length;
+            let matrix = [];
+            for (let i = 0; i <= b.length; i++) matrix[i] = [i];
+            for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+            for (let i = 1; i <= b.length; i++) {
+                for (let j = 1; j <= a.length; j++) {
+                    if (b.charAt(i - 1) === a.charAt(j - 1)) {
+                        matrix[i][j] = matrix[i - 1][j - 1];
+                    } else {
+                        matrix[i][j] = Math.min(matrix[i - 1][j - 1] + 1, Math.min(matrix[i][j - 1] + 1, matrix[i - 1][j] + 1));
+                    }
+                }
+            }
+            return matrix[b.length][a.length];
+        }
+
+        function ratio(a, b) {
+            let maxLen = Math.max(a.length, b.length);
+            if (maxLen === 0) return 100;
+            return ((1 - levenshtein(a, b) / maxLen) * 100);
+        }
+
+        function cleanStr(str) {
+            return (str || "").toString().toLowerCase().replace(/[^\w\s]/gi, '').replace(/\s+/g, ' ').trim();
+        }
+
+        function tokenSortRatio(s1, s2) {
+            let t1 = cleanStr(s1).split(' ').sort().join(' ');
+            let t2 = cleanStr(s2).split(' ').sort().join(' ');
+            return ratio(t1, t2);
+        }
+
+        function tokenSetRatio(s1, s2) {
+            let t1 = new Set(cleanStr(s1).split(' '));
+            let t2 = new Set(cleanStr(s2).split(' '));
+            let intersection = [...t1].filter(x => t2.has(x)).sort().join(' ');
+            let diff1 = [...t1].filter(x => !t2.has(x)).sort().join(' ');
+            let diff2 = [...t2].filter(x => !t1.has(x)).sort().join(' ');
+            
+            let combined1 = intersection + " " + diff1;
+            let combined2 = intersection + " " + diff2;
+            
+            let r1 = ratio(intersection, intersection + " " + diff1);
+            let r2 = ratio(intersection, intersection + " " + diff2);
+            let r3 = ratio(combined1.trim(), combined2.trim());
+            return Math.max(r1, r2, r3);
+        }
+
+        // --- GRAPH (UNION FIND) FOR NETWORKS ---
+        class UnionFind {
+            constructor() { this.parent = {}; this.reasons = {}; }
+            add(i) { if (this.parent[i] === undefined) { this.parent[i] = i; this.reasons[i] = []; } }
+            find(i) {
+                if (this.parent[i] === undefined) this.add(i);
+                if (this.parent[i] !== i) this.parent[i] = this.find(this.parent[i]);
+                return this.parent[i];
+            }
+            union(i, j, reason) {
+                let rootI = this.find(i);
+                let rootJ = this.find(j);
+                if (rootI !== rootJ) {
+                    this.parent[rootI] = rootJ;
+                    if(reason) this.reasons[rootJ].push(reason);
+                } else if (reason && !this.reasons[rootJ].includes(reason)){
+                    this.reasons[rootJ].push(reason);
+                }
+            }
+            getGroups() {
+                let groups = {};
+                for (let i in this.parent) {
+                    let root = this.find(i);
+                    if (!groups[root]) groups[root] = [];
+                    groups[root].push(i);
+                }
+                return Object.values(groups);
+            }
+            getReason(i) {
+                let root = this.find(i);
+                return this.reasons[root] && this.reasons[root].length > 0 ? this.reasons[root].join(" | ") : "Single Entry (No Merges)";
+            }
+        }
+
+        // --- MAIN PROCESSING LOGIC ---
+        function setStatus(msg, isError=false, showSpinner=false) {
+            const statusArea = document.getElementById('statusArea');
+            const statusText = document.getElementById('statusText');
+            const spinner = document.getElementById('loadingSpinner');
+            statusArea.classList.remove('hidden', 'bg-red-100', 'text-red-700', 'bg-blue-100', 'text-blue-700', 'bg-green-100', 'text-green-700');
+            
+            if (isError) {
+                statusArea.classList.add('bg-red-100', 'text-red-700');
+                spinner.classList.add('hidden');
+            } else if (showSpinner) {
+                statusArea.classList.add('bg-blue-100', 'text-blue-700');
+                spinner.classList.remove('hidden');
+            } else {
+                statusArea.classList.add('bg-green-100', 'text-green-700');
+                spinner.classList.add('hidden');
+            }
+            statusText.innerText = msg;
+        }
+
+        function normalizeColumns(data) {
+            if(data.length === 0) return [];
+            let headers = Object.keys(data[0]);
+            
+            const colMapping = {
+                'FIR NO': ['FIR NO', 'FIR', 'FIR NUMBER', 'FIR_NO'],
+                'Name': ['NAME', 'ACCUSED NAME', 'OTHER ACCUSED NAME', 'NAME OF ACCUSED', 'PERSON NAME'],
+                'Relative Name': ['RELATIVE NAME', 'FATHER NAME', 'S/O', 'D/O', 'W/O', 'GUARDIAN'],
+                'Address': ['ADDRESS', 'R/O', 'RESIDENCE'],
+                'Date of Arrest': ['DATE OF ARREST', 'ARREST DATE', 'DATE'],
+                'Sections of Law': ['SECTIONS OF LAW', 'SECTIONS', 'SECTIONS AS PER INVESTIGATION', 'LAW SECTIONS', 'UNDER SECTION']
+            };
+
+            let mappedData = [];
+            let renameDict = {};
+
+            headers.forEach(h => {
+                let upperH = h.trim().toUpperCase();
+                for (let [target, variations] of Object.entries(colMapping)) {
+                    if (variations.includes(upperH) && !Object.values(renameDict).includes(target)) {
+                        renameDict[h] = target;
+                        break;
+                    }
+                }
+            });
+
+            data.forEach(row => {
+                let newRow = {};
+                for(let key in row) {
+                    if(renameDict[key]) newRow[renameDict[key]] = row[key];
+                    else newRow[key] = row[key];
+                }
+                if(newRow['FIR NO'] && newRow['Name']) { // Drop empty
+                    mappedData.push(newRow);
+                }
+            });
+            return mappedData;
+        }
+
+        async function processData(data) {
+            try {
+                data = normalizeColumns(data);
+                if(data.length === 0) throw new Error("No valid data found after cleaning. Ensure columns are correct.");
+                
+                // Only require core processing columns now. Missing Dates or Sections will simply be blank.
+                let required = ['FIR NO', 'Name', 'Relative Name', 'Address'];
+                let missing = required.filter(r => !Object.keys(data[0]).includes(r));
+                if (missing.length > 0) throw new Error("Missing strictly required columns: " + missing.join(", "));
+
+                // 1. Normalize Entities (Person Resolution)
+                setStatus("Step 1/3: Normalizing entities & finding aliases... (This may take a minute)", false, true);
+                await new Promise(resolve => setTimeout(resolve, 50)); // UI yield
+                
+                let entityUF = new UnionFind();
+                data.forEach((r, i) => entityUF.add(i));
+
+                // Block by first 3 chars to prevent O(N^2) browser freeze
+                let blocks = { name: {}, rel: {}, add: {} };
+                data.forEach((r, i) => {
+                    let n = cleanStr(r['Name']).substring(0,3);
+                    let rel = cleanStr(r['Relative Name']).substring(0,3);
+                    let add = cleanStr(r['Address']).substring(0,5);
+                    if(n) { blocks.name[n] = blocks.name[n] || []; blocks.name[n].push(i); }
+                    if(rel) { blocks.rel[rel] = blocks.rel[rel] || []; blocks.rel[rel].push(i); }
+                    if(add) { blocks.add[add] = blocks.add[add] || []; blocks.add[add].push(i); }
+                });
+
+                let checked = new Set();
+                let evaluate = (i, j) => {
+                    let key = i < j ? `${i}-${j}` : `${j}-${i}`;
+                    if(checked.has(key)) return;
+                    checked.add(key);
+
+                    let ri = data[i], rj = data[j];
+                    if(!ri['Name'] || !rj['Name'] || !ri['Relative Name'] || !rj['Relative Name'] || !ri['Address'] || !rj['Address']) return;
+
+                    let nSim = tokenSortRatio(ri['Name'], rj['Name']);
+                    if (nSim < 90) return;
+                    let relSim = tokenSortRatio(ri['Relative Name'], rj['Relative Name']);
+                    if (relSim < 80) return;
+                    let addSim = tokenSetRatio(ri['Address'], rj['Address']);
+                    if (addSim < 80) return;
+
+                    let reason = `Sim Match (Name: ${Math.round(nSim)}%, Rel: ${Math.round(relSim)}%, Add: ${Math.round(addSim)}%)`;
+                    entityUF.union(i, j, reason);
+                };
+
+                for(let bType in blocks) {
+                    for(let bKey in blocks[bType]) {
+                        let idxs = blocks[bType][bKey];
+                        if(idxs.length > 1 && idxs.length < 500) {
+                            for(let i=0; i<idxs.length; i++) {
+                                for(let j=i+1; j<idxs.length; j++) evaluate(idxs[i], idxs[j]);
+                            }
+                        }
+                    }
+                }
+
+                // Map Person IDs
+                data.forEach((r, i) => {
+                    r['Person_ID'] = "PID_" + entityUF.find(i);
+                    r['Entity_Merge_Reason'] = entityUF.getReason(i);
+                });
+
+                // 2. Build Gangs
+                setStatus("Step 2/3: Mapping networks based on FIRs...", false, true);
+                await new Promise(resolve => setTimeout(resolve, 50));
+                
+                let gangUF = new UnionFind();
+                let firGroups = {};
+                data.forEach(r => {
+                    let fir = r['FIR NO'];
+                    if(!firGroups[fir]) firGroups[fir] = [];
+                    firGroups[fir].push(r['Person_ID']);
+                });
+
+                for(let fir in firGroups) {
+                    let pids = [...new Set(firGroups[fir])];
+                    for(let i=0; i<pids.length; i++) gangUF.add(pids[i]);
+                    for(let i=0; i<pids.length; i++) {
+                        for(let j=i+1; j<pids.length; j++) {
+                            gangUF.union(pids[i], pids[j]);
+                        }
+                    }
+                }
+
+                // 3. Assign Gang Names
+                setStatus("Step 3/3: Assigning Gang Profiles...", false, true);
+                await new Promise(resolve => setTimeout(resolve, 50));
+
+                let pidFirCount = {};
+                let pidNameMap = {};
+                let pidRelMap = {};
+                data.forEach(r => {
+                    let pid = r['Person_ID'];
+                    pidFirCount[pid] = pidFirCount[pid] || new Set();
+                    pidFirCount[pid].add(r['FIR NO']);
+                    pidNameMap[pid] = pidNameMap[pid] || r['Name'];
+                    pidRelMap[pid] = pidRelMap[pid] || r['Relative Name'];
+                });
+
+                let gangs = gangUF.getGroups();
+                let gangMapping = {};
+
+                gangs.forEach((gangArray, index) => {
+                    let leaderPid = gangArray.reduce((maxPid, currPid) => 
+                        (pidFirCount[currPid].size > pidFirCount[maxPid].size) ? currPid : maxPid
+                    , gangArray[0]);
+
+                    let leaderName = (pidNameMap[leaderPid] || "UNKNOWN").toString().toUpperCase();
+                    let leaderRel = (pidRelMap[leaderPid] || "UNKNOWN").toString().toUpperCase();
+                    
+                    // UPDATED NAMING CONVENTION HERE
+                    let gName = `${leaderName} (S/o ${leaderRel}) GANG [Gang ID #${index+1}]`;
+                    if (gangArray.length === 1 && pidFirCount[leaderPid].size === 1) gName = "Independent Offender";
+
+                    gangArray.forEach(pid => gangMapping[pid] = gName);
+                });
+
+                data.forEach(r => r['Gang Name'] = gangMapping[r['Person_ID']]);
+
+                // Sort by Gang Name
+                data.sort((a, b) => a['Gang Name'].localeCompare(b['Gang Name']));
+                
+                globalData = data;
+                setStatus("Analysis Complete! Generating dashboard...", false, false);
+                buildDashboard();
+
+            } catch (err) {
+                setStatus("Error: " + err.message, true);
+            }
+        }
+
+        function handleFileSelect(evt) {
+            const file = evt.target.files[0];
+            if (!file) return;
+            document.getElementById('fileNameDisplay').innerText = file.name;
+            document.getElementById('dashboard').classList.add('hidden');
+            setStatus("Reading file...", false, true);
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const data = e.target.result;
+                if (file.name.endsWith('.csv')) {
+                    let parsed = Papa.parse(data, { header: true, skipEmptyLines: true });
+                    // Handle exported files that have metadata rows at the top
+                    let rows = parsed.data;
+                    if (rows.length > 6 && !Object.keys(rows[0]).some(k => k.toUpperCase().includes('FIR'))) {
+                        // Skip 6 rows if headers look bad
+                        let rawText = data.split('\n').slice(6).join('\n');
+                        rows = Papa.parse(rawText, { header: true, skipEmptyLines: true }).data;
+                    }
+                    processData(rows);
+                } else {
+                    // Excel
+                    let workbook = XLSX.read(data, { type: 'binary' });
+                    let sheetName = workbook.SheetNames[0];
+                    let rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: "" });
+                    // Try skipping rows if bad headers
+                    if (rows.length > 6 && !Object.keys(rows[0]).some(k => k.toUpperCase().includes('FIR'))) {
+                        rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { range: 6, defval: "" });
+                    }
+                    processData(rows);
+                }
+            };
+            if(file.name.endsWith('.csv')) reader.readAsText(file);
+            else reader.readAsBinaryString(file);
+        }
+
+        // --- DASHBOARD & RENDERING ---
+        function buildDashboard() {
+            document.getElementById('dashboard').classList.remove('hidden');
+            document.getElementById('totalRecords').innerText = globalData.length;
+            
+            let majorGangs = globalData.filter(r => r['Gang Name'] !== "Independent Offender");
+            let uniqueGangs = [...new Set(majorGangs.map(r => r['Gang Name']))];
+            document.getElementById('totalGangs').innerText = uniqueGangs.length;
+
+            // Calculate Top 10
+            let gangCounts = {};
+            majorGangs.forEach(r => {
+                gangCounts[r['Gang Name']] = gangCounts[r['Gang Name']] || new Set();
+                gangCounts[r['Gang Name']].add(r['FIR NO']);
+            });
+
+            let top10 = Object.keys(gangCounts).map(k => ({ name: k, count: gangCounts[k].size }))
+                .sort((a,b) => b.count - a.count).slice(0, 10);
+
+            let tbodyTop = document.querySelector('#topGangsTable tbody');
+            tbodyTop.innerHTML = "";
+            top10.forEach((g, i) => {
+                let tr = document.createElement('tr');
+                tr.innerHTML = `<td>${i+1}</td><td class="font-bold">${g.name}</td><td>${g.count}</td>`;
+                tbodyTop.appendChild(tr);
+            });
+
+            renderTable();
+        }
+
+        function renderTable() {
+            let sName = document.getElementById('searchName').value.toLowerCase();
+            let sRel = document.getElementById('searchRel').value.toLowerCase();
+            let sFir = document.getElementById('searchFir').value.toLowerCase();
+            let sAdd = document.getElementById('searchAdd').value.toLowerCase();
+
+            filteredData = globalData.filter(r => {
+                return (r['Name']||"").toLowerCase().includes(sName) &&
+                       (r['Relative Name']||"").toLowerCase().includes(sRel) &&
+                       (r['FIR NO']||"").toLowerCase().includes(sFir) &&
+                       (r['Address']||"").toLowerCase().includes(sAdd);
+            });
+
+            document.getElementById('searchResultCount').innerText = `${filteredData.length} records found.`;
+
+            let tbody = document.querySelector('#mainTable tbody');
+            tbody.innerHTML = "";
+            
+            // Render only top 500 to prevent browser lag
+            let renderLimit = Math.min(filteredData.length, 500);
+            for(let i=0; i < renderLimit; i++) {
+                let r = filteredData[i];
+                let tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td class="font-bold text-blue-800 bg-blue-50">${r['Gang Name']}</td>
+                    <td>${r['FIR NO'] || ''}</td>
+                    <td>${r['Name'] || ''}</td>
+                    <td>${r['Relative Name'] || ''}</td>
+                    <td>${r['Date of Arrest'] || ''}</td>
+                    <td>${r['Sections of Law'] || ''}</td>
+                    <td>${r['Address'] || ''}</td>
+                    <td class="text-xs text-gray-500">${r['Entity_Merge_Reason']}</td>
+                `;
+                tbody.appendChild(tr);
+            }
+        }
+
+        // --- EXPORT FUNCTIONALITY ---
+        function getExportDataWithBlanks() {
+            let exportCols = ['Gang Name', 'FIR NO', 'Name', 'Relative Name', 'Date of Arrest', 'Sections of Law', 'Address', 'Entity_Merge_Reason'];
+            let finalOutput = [];
+            let currentGang = null;
+
+            filteredData.forEach(r => {
+                if (currentGang !== null && r['Gang Name'] !== currentGang) {
+                    // Insert blank row
+                    let emptyRow = {};
+                    exportCols.forEach(c => emptyRow[c] = "");
+                    finalOutput.push(emptyRow);
+                }
+                let outRow = {};
+                exportCols.forEach(c => outRow[c] = r[c] !== undefined ? r[c] : "");
+                finalOutput.push(outRow);
+                currentGang = r['Gang Name'];
+            });
+            return finalOutput;
+        }
+
+        function exportData(type) {
+            let data = getExportDataWithBlanks();
+            if(data.length === 0) return alert("No data to export!");
+
+            if (type === 'csv') {
+                let csv = Papa.unparse(data);
+                let blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                let url = URL.createObjectURL(blob);
+                let link = document.createElement("a");
+                link.setAttribute("href", url);
+                link.setAttribute("download", "Gang_Network_Output.csv");
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            } else if (type === 'xlsx') {
+                let ws = XLSX.utils.json_to_sheet(data);
+                let wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, "Gang Networks");
+                XLSX.writeFile(wb, "Gang_Network_Output.xlsx");
+            }
+        }
+    </script>
+</body>
+</html>
